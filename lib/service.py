@@ -16,6 +16,7 @@ class Service(object):
     OPTS_HELP = dict()
     OPTS_REQUIRED = dict()
     SOCKET_TIMEOUT = 0.01
+    PROCESSED_LOG_MSGS = []
     
     def __init__(self, id=None, json=None, cfg=None):
         if (id):
@@ -45,6 +46,7 @@ class Service(object):
         self.cfgfile = str(pathlib.Path(self.dir + "/cfg"))
         self.pidfile = str(pathlib.Path(self.dir + "/pid"))
         self.mgmtfile = str(pathlib.Path(self.dir + "/mgmt"))
+        self.logfile = str(pathlib.Path(self.dir + "/log"))
         self.process = None
         if (not self.cfg):
             self.cfg = {}
@@ -109,8 +111,9 @@ class Service(object):
             time.sleep(0.1)
             i = i+1
         if (i==maxwait):
-            log.L.error("Error runing service %s: %s" % (self.id, " ".join(cmd)))
+            log.L.error("Error getting PID for service %s" % (self.id))
             sys.exit(1)
+        self.pid=pid
         return(pid)
 
     def stop(self):
@@ -126,6 +129,17 @@ class Service(object):
         return(self.cost)
         
     def getLine(self):
+        if config.CONFIG.isWindows() and pathlib.Path(self.logfile).is_file():
+            with open(self.logfile, 'rU') as f:
+                f = f.readlines()
+            global PROCESSED_LOG_MSGS
+            for line in f:
+                if not line in self.PROCESSED_LOG_MSGS:
+                    self.PROCESSED_LOG_MSGS.append(line)
+                    return(line)
+            return(None)
+        if not self.process:
+            return(None)
         try:
             outs, errs = self.process.communicate(timeout=0.05)
             return(outs + errs)
@@ -213,8 +227,20 @@ class Service(object):
         pass
 
     def isAlive(self):
-        self.process.poll()
-        return(self.process.returncode == None)
+        if config.CONFIG.isWindows():
+            # check if pid exists in running processes
+            pid = self.pid
+            if (pid != 0):
+                filterByPid = "PID eq %s" % pid
+                pidStr = str(pid)
+                cmd = ["cmd", "/c", "tasklist", "/FI", filterByPid, "|", "findstr",  pidStr]
+                result = subprocess.call(cmd, stdout=subprocess.DEVNULL)
+                return (result == 0)
+            else:
+                return False
+        else:
+            self.process.poll()
+            return(self.process.returncode == None)
     
     def getCost(self):
         return(self.cost)

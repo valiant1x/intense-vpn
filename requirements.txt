@@ -6,3 +6,5 @@ jsonpickle
 configargparse
 requests
 dnspython
+pywin32
+pywin32-ctypes

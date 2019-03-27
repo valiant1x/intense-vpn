@@ -61,15 +61,11 @@ docker-shell:
    	  --mount type=bind,source=$$(pwd)/build/bcdata,target=/home/lthn \
 	  lethean/lethean-vpn:devel sh
 
-lthnvpnc:
-	mkdir bin
-	@echo pyinstaller --add-data "lib;lib" --add-data "conf;conf" \
-	  --add-data "bin/cygwin1.dll;bin" --add-data "bin/cygcrypto-1.0.0.dll;bin" --add-data "bin/cygz.dll;bin" \
-	  --add-data "bin/liblzo2-2.dll;bin" --add-data "bin/libpkcs11-helper-1.dll;bin" \
-	  --add-data "bin/cygpcre-1.dll;bin" --add-data "bin/cygssl-1.0.0.dll;bin" \
-	  --add-binary "bin/openvpn.exe;bin" --add-binary "bin/tstunnel.exe;bin" --add-binary "bin/haproxy.exe;bin" \
-	  -p lib -p 'C:\Python37\Lib\site-packages' \
-	  --noconfirm --log-level=WARN --onefile --nowindow \
-	  client/lthnvpnc.py
-
-	
+lthnvpnc-win:
+	# tstunnel.exe: https://www.stunnel.org/
+	# -- required files: libssl-1_1-x64.dll, libcrypto-1_1-x64.dll
+	# haproxy.exe: https://www.haproxy.org/
+	# -- compiled under cygwin; required files cyg*.dll (5 DLLs in total)
+	# openvpn.exe: https://openvpn.net/
+	# -- required files: libpkcs11-helper-1.dll, libeay32.dll, liblzo2-2.dll
+	@echo pyinstaller lthnvpnc-win.spec

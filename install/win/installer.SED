@@ -1,0 +1,41 @@
+[Version]
+Class=IEXPRESS
+SEDVersion=3
+[Options]
+PackagePurpose=InstallApp
+ShowInstallProgramWindow=0
+HideExtractAnimation=0
+UseLongFileName=1
+InsideCompressed=0
+CAB_FixedSize=0
+CAB_ResvCodeSigning=0
+RebootMode=I
+InstallPrompt=%InstallPrompt%
+DisplayLicense=%DisplayLicense%
+FinishMessage=%FinishMessage%
+TargetName=%TargetName%
+FriendlyName=%FriendlyName%
+AppLaunched=%AppLaunched%
+PostInstallCmd=%PostInstallCmd%
+AdminQuietInstCmd=%AdminQuietInstCmd%
+UserQuietInstCmd=%UserQuietInstCmd%
+SourceFiles=SourceFiles
+[Strings]
+InstallPrompt=
+DisplayLicense=
+FinishMessage=Lethean VPN installed! Get the wallet from www.lethean.io.
+TargetName=\lthn_vpn_install.EXE
+FriendlyName=Lethean VPN Installer
+AppLaunched=cmd.exe /c setup.bat
+PostInstallCmd=<None>
+AdminQuietInstCmd=
+UserQuietInstCmd=
+FILE0="Install_LTHN_Service.bat"
+FILE1="openvpn-install-2.4.7-I603.exe"
+FILE2="setup.bat"
+[SourceFiles]
+SourceFiles0=\
+[SourceFiles0]
+%FILE0%=
+%FILE1%=
+%FILE2%=

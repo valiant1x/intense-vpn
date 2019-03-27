@@ -121,8 +121,10 @@ class ServiceOvpnClient(ServiceOvpn):
         self.cfg["mgmtport"] = config.Config.CAP.vpncMgmtPort
         if (config.CONFIG.isWindows()):
             wc='#'
+            log_append='log-append log'
         else:
             wc=''
+            log_append=''
 
         out = tmpl.decode("utf-8").format(
                           port=self.cfg['port'],
@@ -146,7 +148,8 @@ class ServiceOvpnClient(ServiceOvpn):
                           pull_filters=pull_filter,
                           mgmt_comment=mgmt_comment,
                           comment_dn=wc,
-                          comment_syslog=wc
+                          comment_syslog=wc,
+                          log_append=log_append
                           )
         try:
             cf = open(self.cfgfile, "wb")
