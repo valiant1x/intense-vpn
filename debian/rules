@@ -12,10 +12,13 @@ override_dh_auto_install:
 	  sed -i 's^#!/usr/bin/python^#!/usr/bin/python3^' $$b; \
 	done
 	cp $(PWD)/debian/lthn-easy-deploy-node.sh $(PWD)/debian/lethean-vpn/usr/bin/
+	cp $(PWD)/debian/fixdirs.sh $(PWD)/debian/lethean-vpn/usr/lib/lthn/
+	chmod +x $(PWD)/debian/lethean-vpn/usr/lib/lthn/fixdirs.sh
 	dh_installinit
 	mkdir -p $(PWD)/debian/lethean-vpn/etc/sudoers.d
 	cp $(PWD)/conf/sudoers-lthn.conf $(PWD)/debian/lethean-vpn/etc/sudoers.d/lthn
 	chmod 440 $(PWD)/debian/lethean-vpn/etc/sudoers.d/lthn
+	rm -f $(PWD)/debian/lethean-vpn/etc/lthn/dispatcher.ini
 
 override_dh_installinit:
 	dh_installinit --name lethean-vpn-client

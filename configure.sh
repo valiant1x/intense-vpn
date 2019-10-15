@@ -406,7 +406,7 @@ if [ -n "$generate_ini" ]; then
     fi
 fi
 
-if [ -n "$install_service" ]; then
+if [ -n "$install_service" ] && [ -f conf/lthnvpnd.service ] ; then
     mkdir -p build/etc/systemd/system
     cp conf/lthnvpnd.service build/etc/systemd/system/
 fi

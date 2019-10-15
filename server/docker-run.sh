@@ -1,13 +1,9 @@
 #!/bin/bash
 
-export PATH=/opt/lthn/bin:/sbin:/usr/sbin:$PATH
-export CONF=/opt/lthn/etc/
-export HOME=/home/lthn
-export LMDB=/home/lthn/.intensecoin/lmdb
+set -e
 
-if [ -f "$CONF/env.sh" ]; then
-  . "$CONF/env.sh"
-fi
+export CONF=/etc/lthn
+export HOME=/var/lib/lthn
 
 errorExit(){
     echo "$2" >&2
@@ -16,84 +12,50 @@ errorExit(){
 }
 
 prepareConf(){
-    cd /usr/src/lethean-vpn
-    ./configure.sh --runas-user lthn --runas-group lthn --client
-    make install CLIENT=1 || { errorExit 2 "Cannot prepare $CONF! "; }
-}
+    cat >/etc/lthn/rsyslog.conf <<EOF
 
-prepareRsyncConf(){
-    if ! [ -f $CONF/rsyncd.conf ]; then
-      cat >$CONF/rsyncd.conf <<EOF
- [lmdb]
-    path = $LMDB
-    comment = Lethean Blockchain
-    read only = yes
+module(load="imuxsock") # provides support for local system logging
+module(load="imklog")   # provides kernel logging support
+$ActionFileDefaultTemplate RSYSLOG_TraditionalFileFormat
+
+$FileOwner root
+$FileGroup adm
+$FileCreateMode 0640
+$DirCreateMode 0755
+$Umask 0022
+
+$WorkDirectory /var/spool/rsyslog
+
+*.*                        /dev/console
+
 EOF
-fi
-}
-
-prepareLmdb(){
-  if ! [ -d "$LMDB" ] || [ "$1" = "force" ]; then
-    echo "Fetching Blockchain data..." >&2
-    mkdir -p $LMDB && cd $LMDB || errorExit 4 "Cannot create $LMDB dir!"
-     rm -f data.mdb.zsync
-     wget "$ZSYNC_URL" && zsync data.mdb.zsync
-     if ! [ -f data.mdb ]; then
-        errorExit 4 "Cannot fetch Blockchain data!"
-     fi
-     if [ -n "$ZSYNC_DATA_SHA" ]; then
-        echo "Testing blockchain file for consistency..." >&2
-        localsum=$(sha256sum data.mdb | cut -d ' ' -f 1)
-        remotesum=$(wget -O- $ZSYNC_DATA_SHA)
-        if [ "$localsum" != "$remotesum" ]; then
-            errorExit 4 "Blockchain data corrupted!"
-        fi
-    fi
-     echo "Blockchain data downloaded!" >&2
-  else
-    echo "Blockchain data already exists. Skipping fetch." >&2
-  fi
 }
 
 runDaemon(){
-    if [ -t 0 ] ; then
-        prepareLmdb
-        echo "Starting lethean daemon..." >&2
-        letheand "$@"
-    else
-        errorExit 3 "You must allocate TTY to run letheand! Use -t option"
-    fi
+    . /etc/default/lethean-daemon
+    letheand start --non-interactive --standard-json --config-file ${LETHEAND_CONFIG} --pidfile ${LETHEAND_PID} --log-file ${LETHEAND_LOG} --data-dir ${LETHEAND_DATA}
+    letheand status
+    tail -f /var/log/lthn/letheand.log
 }
 
-runWalletRpc(){
-    cd /opt/lthn/var
-    if [ -z "$WALLET_RPC_URI" ]; then
-      echo "Starting Wallet RPC server with $CONF/$WALLET_FILE." >&2
-      rm -f lethean-wallet-vpn-rpc*.login
-      lethean-wallet-vpn-rpc --vpn-rpc-bind-port 14660 --wallet-file "$CONF/$WALLET_FILE" --daemon-host "$DAEMON_HOST" --rpc-login "dispatcher:$WALLET_RPC_PASSWORD" --password "$WALLET_PASSWORD" --log-file /var/log/wallet.log &
-      sleep 4
-      WALLET_RPC_URI="http://localhost:14660"
-    else
-      echo "Wallet is outside of container ($WALLET_RPC_URI)." >&2
-    fi    
+runWalletVpnRpc(){
+    . /etc/default/lethean-wallet-vpn-rpc
+    rm -f /var/lib/lthn/lethean-wallet-vpn-rpc.*.login
+    lethean-wallet-vpn-rpc --vpn-rpc-bind-port ${RPCPORT} --password ${WALLETPASS} --rpc-login ${RPCLOGIN} --daemon-host ${DAEMONHOST} --wallet-file ${LETHEANWALLET} --log-file /dev/stdout &
 }
 
 runWalletCli(){
-    cd /opt/lthn/var
-    if ! [ -t 0 ] ; then
-        errorExit 3 "You must allocate TTY to run letheand! Use -t option"
-    fi
-    if [ -z "$WALLET_RPC_URI" ]; then
-      echo "Starting Wallet cli with $CONF/$WALLET_FILE." >&2
-      lethean-wallet-cli --wallet-file "$CONF/$WALLET_FILE" --daemon-host "$DAEMON_HOST" --password "$WALLET_PASSWORD"
-      sleep 4
-    else
-      echo "Wallet is outside of container ($WALLET_RPC_URI)." >&2
-    fi    
+    lethean-wallet-cli "$@"
+}
+
+refreshWallet(){
+    [ -z "$WALLETRESTOREHEIGHT" ] && WALLETRESTOREHEIGHT="464227"
+    . /etc/default/lethean-wallet-vpn-rpc
+    lethean-wallet-cli --wallet $WALLETFILE --daemon-host ${DAEMONHOST} --restore-height "$WALLETRESTOREHEIGHT" --password "$WALLETPASS" --log-file /dev/stdout --log-level 4 --command refresh
 }
 
 testServerConf(){
-    if ! [ -f /opt/lthn/etc/sdp.json ] || ! [ -f /opt/lthn/etc/dispatcher.ini ]; then
+    if ! [ -f /etc/lthn/sdp.json ] || ! [ -f /etc/lthn/dispatcher.ini ]; then
         errorExit 1 "We are not configured! Exiting! Run easy-deploy first or configure manually"
     fi
 }
@@ -139,7 +101,7 @@ EOF
 
 prepareZabbix(){
 cat >$CONF/zabbix_agentd.conf <<EOF
-PidFile=/opt/lthn/var/run/zabbix_agentd.pid
+PidFile=/var/lib/lthn/zabbix_agentd.pid
 LogFile=/dev/null
 LogFileSize=0
 Server=127.0.0.1
@@ -148,71 +110,13 @@ HostnameItem=system.hostname
 EOF
 }
 
-generateEnv(){
-    echo "WALLET_PASSWORD='$WALLET_PASSWORD'"
-    echo "WALLET_RPC_PASSWORD=$WALLET_RPC_PASSWORD'"
-    echo "CA_PASSWORD='$CA_PASSWORD'"
-    echo "PROVIDER_ID='$PROVIDER_ID'"
-    echo "PROVIDER_KEY='$PROVIDER_KEY'"
-    echo "WALLET_FILE='$WALLET_FILE'"
-    echo "WALLET_RPC_URI='$WALLET_RPC_URI'"
-}
-
 case $1 in
 easy-deploy)
-    cd /usr/src/lethean-vpn
-
-    if [ -z "$WALLET_PASSWORD" ]; then
-        WALLET_PASSWORD=$(pwgen 32 1)
+    if ! [ -f /etc/lthn/dispatcher.ini ]; then
+        cp /etc/skel/lthn/* /etc/lthn/
     fi
-    if [ -z "$WALLET_RPC_PASSWORD" ]; then
-        WALLET_RPC_PASSWORD=$(pwgen 32 1)
-    fi
-    if [ -z "$CA_PASSWORD" ]; then
-        CA_PASSWORD=$(pwgen 32 1)
-    fi
-    if [ -n "$PROVIDER_ID" ]; then
-        provideropts="--with-providerid '$PROVIDER_ID' --with-providerkey '$PROVIDER_KEY'"
-    else
-        provideropts="--generate-providerid"
-    fi
-    if [ -z "$WALLET_RPC_URI" ]; then
-      if ! [ -f "$CONF/$WALLET_FILE" ]; then
-        echo "Generating wallet $WALLET_FILE" >&2
-        lethean-wallet-cli --mnemonic-language English --generate-new-wallet "$CONF/$WALLET_FILE" --daemon-host $DAEMON_HOST \
-          --restore-height "$WALLET_RESTORE_HEIGHT" --password "$WALLET_PASSWORD" --log-file /dev/stdout --log-level 4 --command exit \
-          || { errorExit 2 "Cannot create Wallet file! "; }
-      fi
-      WALLET_ADDRESS=$(cat "$CONF/${WALLET_FILE}.address.txt")
-    else
-      echo "Wallet is outside of this image." >&2
-    fi
-
-    if [ -z "$WALLET_RPC_URI" ]; then
-        WALLET_RPC_URI="http://localhost:14660"
-    fi
-    
-    ./configure.sh --prefix "/opt/lthn" --runas-user lthn --runas-group lthn --easy --with-wallet-address "$WALLET_ADDRESS" \
-       --with-wallet-rpc-user dispatcher --with-wallet-rpc-pass "$WALLET_RPC_PASSWORD" $provideropts --with-capass "$CA_PASSWORD" \
-         || { errorExit 3 "Cannot configure! Something is wrong."; }
-    make install FORCE=y || { errorExit 4 "Cannot install! Something is wrong."; }
-    /opt/lthn/bin/lvmgmt --generate-sdp \
-     --sdp-provider-type "$PROVIDER_TYPE" \
-     --sdp-provider-name "$PROVIDER_NAME" \
-     --wallet-address "$WALLET_ADDRESS" \
-     --sdp-service-crt /opt/lthn/etc/ca/certs/ha.cert.pem \
-     --sdp-service-name proxy --sdp-service-id 1a --sdp-service-endpoint "$ENDPOINT" --sdp-service-port "$PORT" \
-     --sdp-service-type proxy --sdp-service-cost 0.001 --sdp-service-dlspeed 1 --sdp-service-ulspeed 1 \
-     --sdp-service-prepaid-mins 10 --sdp-service-verifications 0 || \
-       { errorExit 5 "Cannot create initial SDP!"; }
-    echo >&2
-    echo "These are generated ids and settings. Save this information somewhere!" >&2
-    echo "If you loose some of these information, you will not be able to recover!" >&2
-    if [ -z "$PROVIDER_ID" ]; then
-        PROVIDER_ID=$(cat $CONF/provider.public)
-        PROVIDER_KEY=$(cat $CONF/provider.private)
-    fi
-    generateEnv
+    chown -R lthn:lthn /var/lib/lthn /etc/lthn
+    lthn-easy-deploy-node.sh
     echo >&2
     ;;
 
@@ -221,18 +125,21 @@ prepare-conf)
     ;;
 
 upload-sdp)
-    /opt/lthn/bin/lvmgmt --upload-sdp
+    lvmgmt --upload-sdp
     ;;
 
 lthnvpnd|run)
-    cd /opt/lthn/var
+    cd /var/lib/lthn
     testServerConf
-    if ! [ -f $CONF/zabbix_agentd.conf.conf ]; then
+    . /etc/default/lethean-wallet-vpn-rpc
+    if ! [ -f $CONF/zabbix_agentd.conf ]; then
       prepareZabbix || { errorExit 2 "Cannot create $CONF/zabbix_agentd.conf! "; }
     fi
+    echo "Starring syslog" >&2
+    rsyslogd -f /etc/lthn/rsyslog.conf
     if [ -x /usr/sbin/zabbix_agentd ]; then
        echo "Starting zabbix agent" >&2
-       zabbix_agentd -c /etc/zabbix/zabbix_agentd.conf
+       zabbix_agentd -c $CONF/zabbix_agentd.conf
     fi
     if ! [ -f $CONF/squid.conf ]; then
       prepareSquid || { errorExit 2 "Cannot create $CONF/squid.conf! "; }
@@ -242,21 +149,28 @@ lthnvpnd|run)
     if [ -z "$DAEMON_HOST" ]; then
         runDaemon
     fi
-    runWalletRpc
+    refreshWallet
+    runWalletVpnRpc
     unset HTTP_PROXY
     unset http_proxy
     shift
-    while ! curl "$WALLET_RPC_URI" >/dev/null 2>/dev/null; do
+    while ! curl "$WALLETRPCURI" >/dev/null 2>/dev/null; do
         echo "Waiting for walet rpc server."
         sleep 5
     done
+
     echo "Starting dispatcher" >&2
-    exec lthnvpnd --wallet-rpc-uri "$WALLET_RPC_URI" --syslog "$@"
+    exec su -s /bin/sh lthn -c "lthnvpnd --wallet-rpc-uri '$WALLETRPCURI' --syslog $@"
     ;;
 
-wallet-rpc)
+wallet-vpn-rpc)
     shift
-    runWalletRpc "$@"
+    runWalletVpnRpc "$@"
+    ;;
+
+wallet-refresh)
+    shift
+    refreshWallet
     ;;
 
 wallet-cli)
@@ -276,7 +190,12 @@ zsync-make)
 
 sync-bc)
     shift
-    prepareLmdb force
+    letheand syncbc
+    ;;
+
+clean-bc)
+    shift
+    letheand cleanbc
     ;;
 
 letheand)
@@ -289,7 +208,7 @@ connect|lthnvpnc)
         prepareConf
     fi
     shift
-    exec lthnvpnc connect "$@"
+    exec lthnvpnc connect --syslog "$@"
     ;;
 
 list)
@@ -324,7 +243,8 @@ sh|bash)
     echo "prepare-conf [args] to prepare new conf dir"
     echo "upload-sdp [args] to upload SDP"
     echo "sync-bc to fast sync blockhain data from server."
-    echo "wallet-rpc [args] to run wallet-rpc-daemon"
+    echo "clean-bc to clean blockchain data."
+    echo "wallet-vpn-rpc [args] to run wallet-rpc-daemon"
     echo "wallet-cli [args] to run wallet-cli"
     echo "sh to go into shell" 
     exit 2

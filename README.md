@@ -219,5 +219,34 @@ At least, use dedicated browser with anonymous mode enabled.
 ### scripts
  Various scripts and tools
 
+## Development
+If you want to help developing, here are is some basic info.
+Best and quickest way how to help is prepare pull request for us to review.
 
- 
+### Prepare your system
+
+```
+git clone ...
+cd lethean-vpn
+sudo pip3 install -r requirements.txt
+sudo apt-get install dpkg-dev devscripts
+sudo pip3 install py2deb
+make python-debs
+dpkg-buildpackage .
+```
+This should place all packages in upper directory '..'
+Do not forget that you need to change subversion of debs if you want force
+apt-get update and upgrade to work
+```
+dch -i
+```
+To create repository, copy debs to clean directory, cd to there and do
+```
+dpkg-scanpackages . /dev/null | gzip -9c > Packages.gz
+```
+
+## Testing
+If you want to help testing, be as specific as possible. We will need
+console logs, syslogs and audit log. Do not forget that there can be some
+information which you should not share. Take care to clean data before
+submiting.

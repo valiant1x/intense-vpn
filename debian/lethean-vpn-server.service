@@ -1,15 +1,18 @@
 [Unit]
 Description=LTHN VPN server
 ConditionPathExists=/usr/bin/lthnvpnd
-After=syslog.target
+After=syslog.target lethean-wallet-vpn-rpc.service network.target network-online.target
 
 [Service]
+PermissionsStartOnly=true
 EnvironmentFile=/etc/default/lethean-vpn-server
 Type=simple
+ExecStartPre=/usr/lib/lthn/fixdirs.sh
 ExecStart=/usr/bin/lthnvpnd $LTHNVPND_ARGS
 ExecStopPost=/bin/rm -f /var/run/lthn/lthnvpnd.pid
 User=lthn
 Restart=always
+RestartSec=20
 StandardOutput=syslog
 StandardError=syslog
 PIDFile=/var/run/lthn/lthnvpnd.pid
